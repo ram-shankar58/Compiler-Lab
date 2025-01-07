@@ -2,27 +2,48 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define MAX_RULES 100
 #define MAX_STRING_LENGTH 100
 
-typedef struct {
+// Structure for each production
+typedef struct Production {
+    char production[MAX_STRING_LENGTH];
+    struct Production *next;
+} Production;
+
+// Structure for each grammar rule
+typedef struct Rule {
     char left;
-    char *productions[MAX_RULES];
-    int num_productions;
+    Production *productions;
+    struct Rule *next;
 } Rule;
 
-Rule grammar[MAX_RULES];
-int num_rules = 0;
+Rule *grammar = NULL; // Head of the linked list of rules
 
-// Function to split a production rule into individual productions (separated by '|')
-void split_productions(char *right, char *productions[], int *num_productions) {
-    char *token = strtok(right, "|");
+// Function to add a production to a rule
+void add_production(Rule *rule, const char *production) {
+    Production *new_production = (Production *)malloc(sizeof(Production));
+    strcpy(new_production->production, production);
+    new_production->next = rule->productions;
+    rule->productions = new_production;
+}
+
+// Function to add a rule to the grammar
+void add_rule(char left, const char *productions) {
+    Rule *new_rule = (Rule *)malloc(sizeof(Rule));
+    new_rule->left = left;
+    new_rule->productions = NULL;
+    new_rule->next = grammar;
+    grammar = new_rule;
+
+    // Split the productions and add them to the rule
+    char *token = strtok(strdup(productions), "|");
     while (token != NULL) {
-        productions[(*num_productions)++] = strdup(token);
+        add_production(new_rule, token);
         token = strtok(NULL, "|");
     }
 }
 
+// Function to read grammar from the user
 void read_grammar() {
     printf("Enter the grammar rules (e.g., S->aS|ab). Type 'end' to finish:\n");
     while (1) {
@@ -33,14 +54,12 @@ void read_grammar() {
 
         if (strcmp(line, "end") == 0) break;
 
-        Rule *rule = &grammar[num_rules++];
-        rule->left = line[0];
-        rule->num_productions = 0;
-        split_productions(line + 3, rule->productions, &rule->num_productions);
+        add_rule(line[0], line + 3); // Add the rule to the grammar
     }
 }
 
-int check_derivation(const char *input, int pos, const char *current, char rule_sequence[MAX_RULES][MAX_STRING_LENGTH], int rule_count, char valid_sequences[MAX_RULES][MAX_STRING_LENGTH], int *valid_count) {
+// Recursive function to check derivation
+int check_derivation(const char *input, int pos, const char *current, char rule_sequence[MAX_STRING_LENGTH][MAX_STRING_LENGTH], int rule_count, char valid_sequences[MAX_STRING_LENGTH][MAX_STRING_LENGTH], int *valid_count) {
     if (pos == strlen(input) && current[0] == '\0') {
         // Valid derivation, store the rule sequence
         char sequence[MAX_STRING_LENGTH] = "";
@@ -55,17 +74,16 @@ int check_derivation(const char *input, int pos, const char *current, char rule_
 
     int found = 0;
 
-    // Process each character in `current`
-    if (current[0] >= 'A' && current[0] <= 'Z') { // If it's a non-terminal
-        for (int i = 0; i < num_rules; i++) {
-            if (grammar[i].left == current[0]) { // Match the rule's left-hand side
-                for (int j = 0; j < grammar[i].num_productions; j++) {
+    if (current[0] >= 'A' && current[0] <= 'Z') { // Non-terminal
+        for (Rule *rule = grammar; rule != NULL; rule = rule->next) {
+            if (rule->left == current[0]) {
+                for (Production *prod = rule->productions; prod != NULL; prod = prod->next) {
                     char new_current[MAX_STRING_LENGTH];
-                    snprintf(new_current, sizeof(new_current), "%s%s", grammar[i].productions[j], current + 1);
+                    snprintf(new_current, sizeof(new_current), "%s%s", prod->production, current + 1);
 
                     // Record the rule being applied
                     char rule_string[MAX_STRING_LENGTH];
-                    snprintf(rule_string, sizeof(rule_string), "%c->%s", grammar[i].left, grammar[i].productions[j]);
+                    snprintf(rule_string, sizeof(rule_string), "%c->%s", rule->left, prod->production);
                     strcpy(rule_sequence[rule_count], rule_string);
 
                     if (check_derivation(input, pos, new_current, rule_sequence, rule_count + 1, valid_sequences, valid_count)) {
@@ -74,16 +92,32 @@ int check_derivation(const char *input, int pos, const char *current, char rule_
                 }
             }
         }
-    } else if (current[0] == input[pos]) { // If it's a terminal and matches the input
+    } else if (current[0] == input[pos]) { // Terminal matches input
         return check_derivation(input, pos + 1, current + 1, rule_sequence, rule_count, valid_sequences, valid_count);
     }
 
     return found;
 }
 
+// Function to free the memory used by the grammar
+void free_grammar() {
+    Rule *rule = grammar;
+    while (rule != NULL) {
+        Production *prod = rule->productions;
+        while (prod != NULL) {
+            Production *temp_prod = prod;
+            prod = prod->next;
+            free(temp_prod);
+        }
+        Rule *temp_rule = rule;
+        rule = rule->next;
+        free(temp_rule);
+    }
+}
+
 int main() {
     char input[MAX_STRING_LENGTH];
-    char valid_sequences[MAX_RULES][MAX_STRING_LENGTH];
+    char valid_sequences[MAX_STRING_LENGTH][MAX_STRING_LENGTH];
     int valid_count = 0;
 
     read_grammar();
@@ -91,7 +125,7 @@ int main() {
     printf("Enter a string to check: ");
     scanf("%s", input);
 
-    char rule_sequence[MAX_RULES][MAX_STRING_LENGTH];
+    char rule_sequence[MAX_STRING_LENGTH][MAX_STRING_LENGTH];
     int is_derivable = check_derivation(input, 0, "S", rule_sequence, 0, valid_sequences, &valid_count);
 
     if (is_derivable) {
@@ -110,5 +144,6 @@ int main() {
         printf("The string cannot be derived from the grammar.\n");
     }
 
+    free_grammar(); // Free the allocated memory
     return 0;
 }
